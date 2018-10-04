@@ -1,6 +1,8 @@
 import React from "react";
-import "setimmediate";
 import validateFormData from "./validate";
+import fill from "core-js/library/fn/array/fill";
+
+export const ADDITIONAL_PROPERTY_FLAG = "__additional_property";
 
 const widgetMap = {
   boolean: {
@@ -155,9 +157,8 @@ function computeDefaults(schema, parentDefaults, definitions = {}) {
           if (schema.minItems > defaultsLength) {
             const defaultEntries = defaults || [];
             // populate the array with the defaults
-            const fillerEntries = new Array(
-              schema.minItems - defaultsLength
-            ).fill(
+            const fillerEntries = fill(
+              new Array(schema.minItems - defaultsLength),
               computeDefaults(schema.items, schema.items.defaults, definitions)
             );
             // then fill up the rest with either the item default or empty, up to minItems
@@ -403,7 +404,56 @@ function findSchemaDefinition($ref, definitions = {}) {
   throw new Error(`Could not find a definition for ${$ref}.`);
 }
 
-export function retrieveSchema(schema, definitions = {}, formData = {}) {
+// In the case where we have to implicitly create a schema, it is useful to know what type to use
+//  based on the data we are defining
+const guessType = function guessType(value) {
+  if (Array.isArray(value)) {
+    return "array";
+  } else if (typeof value === "string") {
+    return "string";
+  } else if (value == null) {
+    return "null";
+  } else if (typeof value === "boolean") {
+    return "boolean";
+  } else if (!isNaN(value)) {
+    return "number";
+  } else if (typeof value === "object") {
+    return "object";
+  }
+  // Default to string if we can't figure it out
+  return "string";
+};
+
+// This function will create new "properties" items for each key in our formData
+export function stubExistingAdditionalProperties(
+  schema,
+  definitions = {},
+  formData = {}
+) {
+  // Clone the schema so we don't ruin the consumer's original
+  schema = {
+    ...schema,
+    properties: { ...schema.properties },
+  };
+  Object.keys(formData).forEach(key => {
+    if (schema.properties.hasOwnProperty(key)) {
+      // No need to stub, our schema already has the property
+      return;
+    }
+    const additionalProperties = schema.additionalProperties.hasOwnProperty(
+      "type"
+    )
+      ? { ...schema.additionalProperties }
+      : { type: guessType(formData[key]) };
+    // The type of our new key should match the additionalProperties value;
+    schema.properties[key] = additionalProperties;
+    // Set our additional property flag so we know it was dynamically added
+    schema.properties[key][ADDITIONAL_PROPERTY_FLAG] = true;
+  });
+  return schema;
+}
+
+export function resolveSchema(schema, definitions = {}, formData = {}) {
   if (schema.hasOwnProperty("$ref")) {
     // Retrieve the referenced schema definition.
     const $refSchema = findSchemaDefinition(schema.$ref, definitions);
@@ -463,6 +513,21 @@ export function retrieveSchema(schema, definitions = {}, formData = {}) {
     }
     return schema;
   }
+}
+
+export function retrieveSchema(schema, definitions = {}, formData = {}) {
+  const resolvedSchema = resolveSchema(schema, definitions, formData);
+  const hasAdditionalProperties =
+    resolvedSchema.hasOwnProperty("additionalProperties") &&
+    resolvedSchema.additionalProperties !== false;
+  if (hasAdditionalProperties) {
+    return stubExistingAdditionalProperties(
+      resolvedSchema,
+      definitions,
+      formData
+    );
+  }
+  return resolvedSchema;
 }
 
 function resolveDependencies(schema, definitions, formData) {

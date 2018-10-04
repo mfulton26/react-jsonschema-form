@@ -17,6 +17,7 @@ import customObject from "./customObject";
 import alternatives from "./alternatives";
 import propertyDependencies from "./propertyDependencies";
 import schemaDependencies from "./schemaDependencies";
+import additionalProperties from "./additionalProperties";
 import conditional from "./conditional";
 
 export const samples = {
@@ -39,5 +40,7 @@ export const samples = {
   Alternatives: alternatives,
   "Property dependencies": propertyDependencies,
   "Schema dependencies": schemaDependencies,
+
+  "Additional Properties": additionalProperties,
   Conditional: conditional,
 };
